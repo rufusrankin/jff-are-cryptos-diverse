@@ -1,0 +1,187 @@
+
+
+# Demonstration Code for 
+# "Are Cryptocurrencies Diverse?"
+# http://www.rufusrankin.com/
+# June 2021
+# By Rufus Rankin
+# http://www.rufusrankin.com 
+# (c) 2021 by Rufus Rankin
+# This code and the referenced article 
+# Are for information purposes only
+# No investment advice or warranty is provided
+# By the author or his affiliates
+# Use at your own risk
+
+#Load packages
+
+require(tidyquant)
+require(tidyverse)
+require(riingo)
+require(timetk)
+require(roll)
+
+options(scipen = 50)
+
+###############
+## Functions ##
+###############
+
+#wrapper to compute and present various statistics
+#hat tip to Ilya Kipnis @ Quantstrattrader.com
+
+stratStats <- function(rets) {
+  stats <- rbind(table.AnnualizedReturns(rets), maxDrawdown(rets),CDD(rets),vami(rets))
+  #vami <- cumprod(1+rets)
+  #end.vami<- last(vami)
+  #stats[6,] <- stats[1,]/stats[4,]
+  #stats[7,] <- stats[1,]/stats[5,]
+  stats[7,] <- price.rsq(rets)
+  rownames(stats)[4] <- "MaxDD"
+  rownames(stats)[5] <- "CDaR"
+  rownames(stats)[6] <- "End $"
+  rownames(stats)[7] <- "RSQ"
+  stats<-round(stats,4)
+  return(stats)
+}
+
+#Average correlation function
+
+avgcor<-function(x) {
+  a1<-cor(x)
+  a2<-a1[lower.tri(a1)]
+  a3<-mean(a2)
+  return(a3)
+}
+
+#Most and least correlated functions
+
+mosthighlycorrelated <- function(mydataframe,numtoreport)
+{
+  # find the correlations
+  cormatrix <- cor(mydataframe)
+  # set the correlations on the diagonal or lower triangle to zero,
+  # so they will not be reported as the highest ones:
+  diag(cormatrix) <- 0
+  cormatrix[lower.tri(cormatrix)] <- 0
+  # flatten the matrix into a dataframe for easy sorting
+  fm <- as.data.frame(as.table(cormatrix))
+  # assign human-friendly names
+  names(fm) <- c("First.Variable", "Second.Variable","Correlation")
+  # sort and print the top n correlations
+  head(fm[order(abs(fm$Correlation),decreasing=T),],n=numtoreport)
+}
+
+
+leasthighlycorrelated <- function(mydataframe,numtoreport)
+{
+  # find the correlations
+  cormatrix <- cor(cb21.dr)
+  # set the correlations on the diagonal or lower triangle to zero,
+  # so they will not be reported as the highest ones:
+  diag(cormatrix) <- 0
+  cormatrix[lower.tri(cormatrix)] <- 0
+  cormatrix[cormatrix == 0]<-NA
+  # flatten the matrix into a dataframe for easy sorting
+  fm <- as.data.frame(as.table(cormatrix))
+  fm <- na.omit(fm)
+  # assign human-friendly names
+  names(fm) <- c("First.Variable", "Second.Variable","Correlation")
+  # sort and print the bottom n correlations
+  head(fm[order(abs(fm$Correlation),decreasing=F),],n=10)
+}
+
+##############
+## Get Data ##
+##############
+
+#start with Big 4 BTC,ETH, LTC, XRP rolling correlation
+
+bf.rc<-na.omit(rollapply(bfcr,width = 30, avgcor, by.column = FALSE))
+
+plot(bf.rc, main = "Rolling 30 Day Average Correlation", col = "darkblue")
+
+bfac<-avgcor(bfcr)
+
+bf.ac.a<-avgcor(bfcr["/2018"])
+
+bf.ac.b<-avgcor(bfcr["2019/"])
+
+bfrc.b<-mean(bf.rc["2019/"])
+
+bfrc.a<-mean(bf.rc["/2018"])
+
+#get Coindesk 20 data from riingo
+
+#cb21.dr = daily returns of 18/20 (excluded usdc and usdt)
+
+#chart performance YTD
+
+chart.CumReturns(cb21.dr, legend.loc = "topleft", main = "Coin Performance YTD")
+
+#correlation matrix
+
+c.cor<-round(cor(cb21.dr),2)
+
+#write.csv(as.data.frame(c.cor),"CD20-COR-MAY-21.csv")
+
+avgcor(cb21.dr)
+
+#most highly correlated pairs
+
+cc.mhc<-mosthighlycorrelated(cb21.dr,10)
+
+#least highly correlated pairs
+
+cc.lhc<-leasthighlycorrelated(cb21.dr, 10)
+
+#save to export table
+
+#write.csv(as.data.frame(cc.mhc),"CB20-MHC.csv")
+
+#write.csv(as.data.frame(cc.lhc),"CB20-LHC.csv")
+
+#column average correlation
+
+x<-c.cor
+
+avgcolcor<-function(x){
+  z1<-colSums(x)
+  z2<-z1 - 1
+  z3<-z2/nrow(x)
+  z4<-sort(z3)
+}
+
+acc<-avgcolcor(c.cor)
+
+par(mar = c(5,5,5,5))
+
+barplot(acc, col = "darkblue", las = 3, ylim = c(0.0,0.8),
+        main = "Average Correlation by Coin")
+
+#PCA - not used in article
+
+cc.pca<-prcomp(cb21.dr)
+
+#sim average correlation of portfolios
+
+require(future)
+
+plan(multiprocess)
+
+t1<-Sys.time()
+
+t1
+
+cd.ac.sim<-tk_tbl(future_replicate(10000,simple.avg.cor.sim(cb21.dr,5)))
+
+Sys.time()-t1
+
+hist(cd.ac.sim$data, main = "Average Correlation - Random Portfolios", xlim = c(0.4,0.8),
+     col = "lightblue")
+
+abline(v = 0.5936, col = "darkblue", lwd = 5)
+
+summary(cd.ac.sim$data)
+
+#####END######
